@@ -248,7 +248,7 @@ public class Driver {
 			//populate rotoblurb
 			for(Player tmp:playerList)
 			{
-				tmp.setRotoBlurb();
+				//tmp.setRotoBlurb();
 				System.out.println("set " + tmp.firstName + " " + tmp.lastName);
 			}
 			//populate cbs

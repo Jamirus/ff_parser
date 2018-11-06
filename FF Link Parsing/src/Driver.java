@@ -1,5 +1,6 @@
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Scanner;
@@ -75,14 +76,19 @@ public class Driver {
 	//function to get player news from a rototworld page ******************************************************************
 	static String[] getRotoNews(String url)
 	{
-		String[] ret = new String[2];
+		String[] ret = new String[3];
 		try {
 			Document doc = Jsoup.connect(url).get();
+			Elements playerName = doc.getElementsByClass("playername");
+			ret[2] = playerName.get(0).text().split(" \\| ")[1];
 			Elements playerNews = doc.getElementsByClass("playernews");
-			Elements reports = playerNews.get(0).getElementsByClass("report");
-			ret [0] = reports.get(0).html();
-			Elements impacts = playerNews.get(0).getElementsByClass("impact");
-			ret[1] = impacts.get(0).text();		
+			if(playerNews.size() > 0)
+			{
+				Elements reports = playerNews.get(0).getElementsByClass("report");
+				ret [0] = reports.get(0).html();
+				Elements impacts = playerNews.get(0).getElementsByClass("impact");
+				ret[1] = impacts.get(0).text();	
+			}
 		}
 		catch (IOException e) {
 			// TODO Auto-generated catch block
@@ -110,8 +116,8 @@ public class Driver {
 		
 		return data;
 	}
-	//function to parse rotoworld data and generate a playerlist ******************************************************
-	static ArrayList<Player> getPlayersRoto(Document doc)
+	//function to parse rotoworld team page data and generate a playerlist ******************************************************
+	static ArrayList<Player> getPlayersRoto(Document doc, String team)
 	{
 		ArrayList<Player> players = new ArrayList<Player>();
 		
@@ -137,8 +143,8 @@ public class Driver {
 								String tmpFirst = scan.next();
 								String tmpLast = scan.next(".*");
 								
-								Player tmpPlayer = new Player(tmpFirst, tmpLast, "Detroit Lions");
-								tmpPlayer.setRoto(href);
+								Player tmpPlayer = new Player(tmpFirst, tmpLast, team);
+								tmpPlayer.setRotoLink(href);
 								players.add(tmpPlayer);
 								
 								scan.close();
@@ -199,6 +205,7 @@ public class Driver {
 	{		
 		Document doc = null;
 		
+		
 		//jsoup connect
 		try {
 			//use saved version of the web page for development testing
@@ -208,16 +215,103 @@ public class Driver {
 			//connect to site for correct parsing
 			//doc = Jsoup.connect("http://www.rotoworld.com/teams/clubhouse/nfl/phi/philadelphia-eagles").get();
 			//doc = Jsoup.parse(input, "UTF-8", "http://www.rotoworld.com/teams/clubhouse/nfl/det/detroit-lions");
-			doc = Jsoup.connect("https://www.cbssports.com/fantasy/football/news/fantasy-football-week-3-trade-values-chart-rankings/").get();
+			doc = Jsoup.connect("https://www.cbssports.com/fantasy/football/news/fantasy-football-week-9-trade-values-chart-and-rest-of-season-rankings/").get();
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 		
-		String title = doc.title();
+		//create player array
+		ArrayList<Player> playerList = new ArrayList<Player>();
+		//populate players
+		File teamList = new File("rotoTeamUrls.txt");
+		Scanner scan;
 		
+		try {
+			//populate player list from roto
+			scan = new Scanner(teamList);
+			while(scan.hasNext())
+			{	
+				//get link
+				String tmp = scan.next();
+				
+				//get team name abbrv
+				String[] tmpSplit = tmp.split("/");
+				String team = tmpSplit[4];
+				
+				//run player aquisition
+				doc = Jsoup.connect("http://www.rotoworld.com" + tmp).get();
+				ArrayList<Player> tmpPlayerList = getPlayersRoto(doc, team);
+				playerList.addAll(tmpPlayerList);
+			}
+			System.out.println(playerList.size() + "players");
+			//populate rotoblurb
+			for(Player tmp:playerList)
+			{
+				tmp.setRotoBlurb();
+				System.out.println("set " + tmp.firstName + " " + tmp.lastName);
+			}
+			//populate cbs
+			doc = Jsoup.connect("https://www.cbssports.com/fantasy/football/news/fantasy-football-week-9-trade-values-chart-and-rest-of-season-rankings/").get();
+			ArrayList<String> valuesArray = parseCBSTradeValues(doc);
+			
+			for(int i = 0; i < valuesArray.size(); i++)
+			{
+				if((i+1)%3 == 1)
+				{
+					String[] tmpNames = valuesArray.get(i).split(",")[0].split(" ");
+					for(Player tmpPlayer:playerList)
+					{
+						if(tmpPlayer.firstName.equals(tmpNames[0]) && tmpPlayer.lastName.equals(tmpNames[1]))
+						{
+							tmpPlayer.cbsNonValue = Integer.parseInt(valuesArray.get(i+1));
+							tmpPlayer.cbsPprValue = Integer.parseInt(valuesArray.get(i+2));
+						}
+					}
+				}
+			}
+			//populate fpros
+			
+			//write to file
+			File outFile = new File("players.txt");
+			outFile.createNewFile();
+			FileWriter write = new FileWriter(outFile);
+			for(Player tmp:playerList)
+			{
+				write.write(tmp.toString());
+				write.write("\n");
+			}
+			
+			scan.close();
+			write.close();
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		//diagnostic
+		
+		System.out.println(playerList.size());
+		int count = 0;
+		for(Player tmp:playerList)
+		{
+			if(tmp.cbsNonValue > 0)
+			{
+				System.out.println(tmp.firstName + " " + tmp.lastName + "-" + tmp.cbsNonValue);
+				count++;
+			}
+		}
+		String title = doc.title();
 		System.out.println(title);
 		System.out.println("wowowow");
+		System.out.println(playerList.get(3));
+		
+		
+		/*
+		
 		
 		ArrayList<String> valuesArray = parseCBSTradeValues(doc);
 		
@@ -230,16 +324,9 @@ public class Driver {
 			if((i+1)%3 == 0)
 				System.out.println();
 		}
+		
 
-
-	/*
-	//code to assemble list of team links and parse team name from link
-	
-	//open file and scanner
-	File linkFile = new File("rotoTeamUrls.txt");
-	String[] teamLinks = getRotoTeamLinks(linkFile);
 	*/
-	
 	
 	
 	
